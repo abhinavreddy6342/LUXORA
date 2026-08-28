@@ -83,7 +83,7 @@ def send_email(
         os.getenv("GMAIL_PASSWORD")
     )
     if password:
-        password = password.strip()
+        password = password.strip().replace(" ", "")
 
     from_addr = (
         os.getenv("EMAIL_FROM") or
