@@ -14,7 +14,8 @@ const AuthContext = createContext(null);
 ===================================================== */
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_URL ||
+  "https://luxora-backend-9fsz.onrender.com";
 
 /* =====================================================
    LOCAL STORAGE KEYS
@@ -52,9 +53,11 @@ const saveToken = (token) => {
     }
 
     localStorage.setItem(ACCESS_TOKEN_KEY, token);
+
     return true;
   } catch (error) {
     console.error("Failed to save access token:", error);
+
     return false;
   }
 };
@@ -72,6 +75,7 @@ const saveCurrentUser = (user) => {
     if (!user) {
       localStorage.removeItem(CURRENT_USER_KEY);
       localStorage.removeItem(LEGACY_CURRENT_USER_KEY);
+
       return true;
     }
 
@@ -90,6 +94,7 @@ const saveCurrentUser = (user) => {
     return true;
   } catch (error) {
     console.error("Failed to save current user:", error);
+
     return false;
   }
 };
@@ -257,6 +262,7 @@ export function AuthProvider({ children }) {
         `${API_BASE_URL}/auth/me`,
         {
           method: "GET",
+
           headers: {
             Accept: "application/json",
             Authorization: `Bearer ${token}`,
@@ -404,8 +410,6 @@ export function AuthProvider({ children }) {
       registrationData.password
     );
 
-    /* BUILD NAME */
-
     let finalFirstName = firstNameInput;
     let finalLastName = lastNameInput;
 
@@ -428,8 +432,6 @@ export function AuthProvider({ children }) {
       fullNameInput ||
       `${finalFirstName} ${finalLastName}`.trim();
 
-    /* VALIDATE NAME */
-
     if (!finalFullName) {
       return {
         success: false,
@@ -449,8 +451,6 @@ export function AuthProvider({ children }) {
           "Please enter a valid name.",
       };
     }
-
-    /* VALIDATE EMAIL */
 
     if (!emailInput) {
       return {
@@ -472,8 +472,6 @@ export function AuthProvider({ children }) {
       };
     }
 
-    /* VALIDATE PHONE */
-
     if (!phoneInput) {
       return {
         success: false,
@@ -493,8 +491,6 @@ export function AuthProvider({ children }) {
           "Phone number must contain exactly 10 digits.",
       };
     }
-
-    /* VALIDATE PASSWORD */
 
     if (!passwordInput) {
       return {
@@ -516,18 +512,18 @@ export function AuthProvider({ children }) {
       };
     }
 
-    /* REGISTER WITH FASTAPI */
-
     try {
       const response = await fetch(
         `${API_BASE_URL}/auth/register`,
         {
           method: "POST",
+
           headers: {
             "Content-Type":
               "application/json",
             Accept: "application/json",
           },
+
           body: JSON.stringify({
             name: finalFullName,
             email: emailInput,
@@ -572,9 +568,9 @@ export function AuthProvider({ children }) {
       return {
         success: false,
         message:
-          "Unable to connect to the LUXORA server. Please make sure the backend is running.",
+          "Unable to connect to the LUXORA server. Please try again.",
         error:
-          "Unable to connect to the LUXORA server. Please make sure the backend is running.",
+          "Unable to connect to the LUXORA server. Please try again.",
       };
     }
   };
@@ -593,8 +589,6 @@ export function AuthProvider({ children }) {
     const password = safeString(
       loginData.password
     );
-
-    /* VALIDATE EMAIL */
 
     if (!email) {
       return {
@@ -616,8 +610,6 @@ export function AuthProvider({ children }) {
       };
     }
 
-    /* VALIDATE PASSWORD */
-
     if (!password) {
       return {
         success: false,
@@ -627,8 +619,6 @@ export function AuthProvider({ children }) {
           "Please enter your password.",
       };
     }
-
-    /* LOGIN WITH FASTAPI */
 
     try {
       const formData =
@@ -648,11 +638,13 @@ export function AuthProvider({ children }) {
         `${API_BASE_URL}/auth/login`,
         {
           method: "POST",
+
           headers: {
             "Content-Type":
               "application/x-www-form-urlencoded",
             Accept: "application/json",
           },
+
           body: formData.toString(),
         }
       );
@@ -673,8 +665,6 @@ export function AuthProvider({ children }) {
 
       const data =
         await response.json();
-
-      /* SAVE JWT */
 
       const accessToken = safeString(
         data?.access_token
@@ -703,12 +693,8 @@ export function AuthProvider({ children }) {
         };
       }
 
-      /* USE USER FROM LOGIN RESPONSE */
-
       let loggedInUser =
         normalizeUser(data?.user);
-
-      /* FALLBACK TO /auth/me */
 
       if (!loggedInUser) {
         loggedInUser =
@@ -730,10 +716,11 @@ export function AuthProvider({ children }) {
         };
       }
 
-      /* UPDATE AUTH STATE */
-
       setUser(loggedInUser);
-      saveCurrentUser(loggedInUser);
+
+      saveCurrentUser(
+        loggedInUser
+      );
 
       window.dispatchEvent(
         new Event("luxoraAuthChanged")
@@ -754,9 +741,9 @@ export function AuthProvider({ children }) {
       return {
         success: false,
         message:
-          "Unable to connect to the LUXORA server. Please make sure the backend is running.",
+          "Unable to connect to the LUXORA server. Please try again.",
         error:
-          "Unable to connect to the LUXORA server. Please make sure the backend is running.",
+          "Unable to connect to the LUXORA server. Please try again.",
       };
     }
   };
@@ -878,6 +865,7 @@ export function AuthProvider({ children }) {
     if (!token) {
       setUser(null);
       removeCurrentUser();
+
       return null;
     }
 
@@ -886,7 +874,10 @@ export function AuthProvider({ children }) {
 
     if (currentUser) {
       setUser(currentUser);
-      saveCurrentUser(currentUser);
+
+      saveCurrentUser(
+        currentUser
+      );
 
       window.dispatchEvent(
         new Event("luxoraAuthChanged")
@@ -896,6 +887,7 @@ export function AuthProvider({ children }) {
     }
 
     setUser(null);
+
     removeToken();
     removeCurrentUser();
 
