@@ -18,10 +18,22 @@ from . import models
 
 
 # ============================================================
-# DATABASE
+# DATABASE & SEEDING
 # ============================================================
 
+from .database import SessionLocal, Base, engine
+from .seed import seed_initial_products
+
 Base.metadata.create_all(bind=engine)
+
+def init_db():
+    db = SessionLocal()
+    try:
+        seed_initial_products(db)
+    finally:
+        db.close()
+
+init_db()
 
 
 # ============================================================

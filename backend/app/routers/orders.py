@@ -83,6 +83,18 @@ def create_order(
         )
 
         if not product:
+            from ..seed import seed_initial_products
+            seed_initial_products(db)
+            product = (
+                db.query(Product)
+                .filter(
+                    Product.id == item.product_id,
+                    Product.is_active.is_(True),
+                )
+                .first()
+            )
+
+        if not product:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Product {item.product_id} not found.",
