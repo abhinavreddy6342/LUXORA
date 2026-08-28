@@ -31,9 +31,14 @@ def create_order(
     """
     Create an order for the authenticated user.
 
-    The backend calculates the final amount, validates stock,
-    stores the order, reduces stock and sends the confirmation
-    email after a successful database commit.
+    The backend:
+    - validates the delivery address
+    - validates products and stock
+    - calculates the final order amount
+    - creates the order
+    - reduces stock
+    - sends the order receipt to the authenticated
+      user's registered email address
     """
 
     # --------------------------------------------------------
@@ -82,17 +87,26 @@ def create_order(
             .first()
         )
 
+        # Existing production safety fallback
         if not product:
-            from ..seed import seed_initial_products
-            seed_initial_products(db)
-            product = (
-                db.query(Product)
-                .filter(
-                    Product.id == item.product_id,
-                    Product.is_active.is_(True),
+            try:
+                from ..seed import seed_initial_products
+
+                seed_initial_products(db)
+
+                product = (
+                    db.query(Product)
+                    .filter(
+                        Product.id == item.product_id,
+                        Product.is_active.is_(True),
+                    )
+                    .first()
                 )
-                .first()
-            )
+            except Exception as seed_error:
+                print(
+                    f"Product seeding fallback failed: "
+                    f"{type(seed_error).__name__}: {seed_error}"
+                )
 
         if not product:
             raise HTTPException(
@@ -135,14 +149,18 @@ def create_order(
     coupon_code = None
 
     if order_data.coupon_code:
-        coupon_code = order_data.coupon_code.strip().upper()
+        coupon_code = (
+            order_data.coupon_code.strip().upper()
+        )
 
         coupons = {
             "LUXORA10": 10,
             "WELCOME15": 15,
         }
 
-        discount_percent = coupons.get(coupon_code)
+        discount_percent = coupons.get(
+            coupon_code
+        )
 
         if discount_percent:
             discount = subtotal * (
@@ -175,7 +193,9 @@ def create_order(
 
     total = max(
         0.0,
-        subtotal - discount + delivery_charge,
+        subtotal
+        - discount
+        + delivery_charge,
     )
 
     # --------------------------------------------------------
@@ -201,7 +221,8 @@ def create_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Invalid payment method. Allowed values: "
-                "Cash on Delivery, UPI, Credit / Debit Card, Credit Card, Debit Card."
+                "Cash on Delivery, UPI, Credit / Debit Card, "
+                "Credit Card, Debit Card."
             ),
         )
 
@@ -214,7 +235,10 @@ def create_order(
         address_id=address.id,
         subtotal=round(subtotal, 2),
         discount=round(discount, 2),
-        delivery_charge=round(delivery_charge, 2),
+        delivery_charge=round(
+            delivery_charge,
+            2,
+        ),
         total=round(total, 2),
         coupon_code=coupon_code,
         payment_method=payment_method,
@@ -255,7 +279,7 @@ def create_order(
         )
 
     # --------------------------------------------------------
-    # COMMIT
+    # COMMIT ORDER
     # --------------------------------------------------------
 
     try:
@@ -267,7 +291,8 @@ def create_order(
 
         print(
             f"Failed to create order for user "
-            f"{current_user.id}: {error}"
+            f"{current_user.id}: "
+            f"{type(error).__name__}: {error}"
         )
 
         raise HTTPException(
@@ -279,8 +304,20 @@ def create_order(
         )
 
     # --------------------------------------------------------
-    # SEND CONFIRMATION EMAIL
+    # CUSTOMER EMAIL
     # --------------------------------------------------------
+
+    customer_email = (
+        str(current_user.email)
+        .strip()
+        .lower()
+    )
+
+    if not customer_email:
+        print(
+            f"Order {new_order.id} created, "
+            "but authenticated user has no email address."
+        )
 
     customer_name = (
         current_user.name.strip()
@@ -288,60 +325,138 @@ def create_order(
         else "LUXORA Customer"
     )
 
-    address_str = (
+    # --------------------------------------------------------
+    # DELIVERY ADDRESS
+    # --------------------------------------------------------
+
+    delivery_address = (
         f"{address.name}\n"
         f"{address.address_line}\n"
-        f"{address.city}, {address.state} - {address.postal_code}\n"
+        f"{address.city}, "
+        f"{address.state} - "
+        f"{address.postal_code}\n"
         f"Phone: {address.phone}"
     )
 
-    order_date_str = (
-        new_order.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        if new_order.created_at
-        else None
-    )
+    # --------------------------------------------------------
+    # ORDER DATE
+    # --------------------------------------------------------
+
+    order_date = None
+
+    if new_order.created_at:
+        order_date = new_order.created_at.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    # --------------------------------------------------------
+    # SEND RECEIPT EMAIL
+    # --------------------------------------------------------
 
     email_sent = False
 
     try:
+        print(
+            "LUXORA RECEIPT EMAIL START"
+        )
+
+        print(
+            f"Customer ID: {current_user.id}"
+        )
+
+        print(
+            f"Customer Email: {customer_email}"
+        )
+
+        print(
+            f"Order ID: LUX-{new_order.id:08d}"
+        )
+
         email_sent = send_order_confirmation_email(
-            recipient=current_user.email,
-            order_id=f"LUX-{new_order.id:08d}",
+            # IMPORTANT:
+            # This is the purchaser's email.
+            recipient=customer_email,
+
+            order_id=(
+                f"LUX-{new_order.id:08d}"
+            ),
+
             customer_name=customer_name,
+
             items=email_items,
-            subtotal=float(new_order.subtotal),
-            discount=float(new_order.discount),
+
+            subtotal=float(
+                new_order.subtotal
+            ),
+
+            discount=float(
+                new_order.discount
+            ),
+
             delivery_charge=float(
                 new_order.delivery_charge
             ),
-            total=float(new_order.total),
+
+            total=float(
+                new_order.total
+            ),
+
             payment_method=payment_method,
-            order_date=order_date_str,
-            customer_email=current_user.email,
-            delivery_address=address_str,
+
+            order_date=order_date,
+
+            customer_email=customer_email,
+
+            delivery_address=delivery_address,
+
             order_status=new_order.status,
         )
 
     except Exception as error:
         print(
-            f"Order {new_order.id} was created, "
-            f"but confirmation email failed: {error}"
+            "LUXORA RECEIPT EMAIL EXCEPTION: "
+            f"{type(error).__name__}: {error}"
         )
+
+        email_sent = False
+
+    # --------------------------------------------------------
+    # EMAIL RESULT
+    # --------------------------------------------------------
 
     if email_sent:
         print(
-            f"Payment receipt sent successfully to "
-            f"{current_user.email} for order "
-            f"LUX-{new_order.id:08d}."
-        )
-    else:
-        print(
-            f"Order LUX-{new_order.id:08d} created successfully, "
-            f"but receipt email could not be sent to "
-            f"{current_user.email}."
+            "LUXORA RECEIPT EMAIL SUCCESS"
         )
 
-    new_order.email_sent = bool(email_sent)
+        print(
+            f"FROM: configured LUXORA sender"
+        )
+
+        print(
+            f"TO: {customer_email}"
+        )
+
+        print(
+            f"ORDER: LUX-{new_order.id:08d}"
+        )
+
+    else:
+        print(
+            "LUXORA RECEIPT EMAIL FAILED"
+        )
+
+        print(
+            f"INTENDED RECIPIENT: {customer_email}"
+        )
+
+        print(
+            f"ORDER: LUX-{new_order.id:08d}"
+        )
+
+    # --------------------------------------------------------
+    # RETURN ORDER
+    # --------------------------------------------------------
 
     return new_order
 
@@ -363,7 +478,9 @@ def get_orders(
         .filter(
             Order.user_id == current_user.id
         )
-        .order_by(Order.created_at.desc())
+        .order_by(
+            Order.created_at.desc()
+        )
         .all()
     )
 
@@ -422,7 +539,11 @@ def update_order_status(
         "cancelled",
     }
 
-    new_status = new_status.strip().lower()
+    new_status = (
+        new_status
+        .strip()
+        .lower()
+    )
 
     if new_status not in allowed_statuses:
         raise HTTPException(

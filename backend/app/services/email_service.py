@@ -1,30 +1,161 @@
+"""
+LUXORA email service.
+
+The configured Gmail account is the sender.
+The recipient is supplied by the caller and, for order
+receipts, must be the authenticated customer's email.
+"""
+
 import os
 import smtplib
+from datetime import datetime
 from email.message import EmailMessage
+from email.utils import formataddr, make_msgid
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 
 # ============================================================
-# LOAD ENVIRONMENT VARIABLES
+# ENVIRONMENT
 # ============================================================
 
-from pathlib import Path
+CURRENT_FILE = Path(__file__).resolve()
 
-load_dotenv()
+# backend/app/services/email_service.py
+#                  ↑
+# backend/app/services
+# backend/app
+# backend
+BACKEND_ROOT = CURRENT_FILE.parent.parent.parent
 
-# Explicitly attempt loading .env from app directory or backend root directory
-_app_env = Path(__file__).resolve().parent.parent / ".env"
-if _app_env.exists():
-    load_dotenv(dotenv_path=_app_env)
+BACKEND_ENV_FILE = BACKEND_ROOT / ".env"
 
-_backend_env = Path(__file__).resolve().parent.parent.parent / ".env"
-if _backend_env.exists():
-    load_dotenv(dotenv_path=_backend_env)
+
+def _load_environment():
+    """
+    Load environment variables without overriding values already
+    supplied by Render or the operating environment.
+    """
+
+    load_dotenv(
+        override=False
+    )
+
+    if BACKEND_ENV_FILE.exists():
+        load_dotenv(
+            dotenv_path=BACKEND_ENV_FILE,
+            override=False,
+        )
+
+
+_load_environment()
 
 
 # ============================================================
-# SEND EMAIL
+# ENVIRONMENT HELPER
+# ============================================================
+
+def _get_env(
+    *names,
+    default=None,
+):
+    """
+    Return the first non-empty environment variable.
+    """
+
+    for name in names:
+        value = os.getenv(name)
+
+        if value is None:
+            continue
+
+        value = str(value).strip()
+
+        if value:
+            return value
+
+    return default
+
+
+# ============================================================
+# SMTP CONFIGURATION
+# ============================================================
+
+def _get_smtp_config():
+    """
+    Resolve SMTP settings at the time the email is sent.
+
+    This is important for cloud deployments such as Render.
+    """
+
+    _load_environment()
+
+    host = _get_env(
+        "EMAIL_HOST",
+        "SMTP_HOST",
+        "MAIL_HOST",
+        default="smtp.gmail.com",
+    )
+
+    port_raw = _get_env(
+        "EMAIL_PORT",
+        "SMTP_PORT",
+        "MAIL_PORT",
+        default="587",
+    )
+
+    try:
+        port = int(port_raw)
+    except (
+        TypeError,
+        ValueError,
+    ):
+        port = 587
+
+    username = _get_env(
+        "EMAIL_USERNAME",
+        "SMTP_USERNAME",
+        "MAIL_USERNAME",
+        "GMAIL_USER",
+        "GMAIL_USERNAME",
+    )
+
+    password = _get_env(
+        "EMAIL_PASSWORD",
+        "SMTP_PASSWORD",
+        "MAIL_PASSWORD",
+        "GMAIL_PASS",
+        "GMAIL_PASSWORD",
+    )
+
+    if password:
+        # Google displays App Passwords with spaces sometimes.
+        password = (
+            password
+            .replace(" ", "")
+            .replace("\t", "")
+            .strip()
+        )
+
+    from_address = _get_env(
+        "EMAIL_FROM",
+        "SMTP_FROM",
+        "MAIL_FROM",
+        default=username,
+    )
+
+    return {
+        "host": host,
+        "port": port,
+        "username": username,
+        "password": password,
+        "from_address": from_address,
+    }
+
+
+# ============================================================
+# GENERIC EMAIL
 # ============================================================
 
 def send_email(
@@ -33,135 +164,236 @@ def send_email(
     body: str,
 ) -> bool:
     """
-    Send a plain-text email using SMTP (Gmail or custom SMTP server).
+    Send a plain-text email through SMTP.
 
     Returns:
-        True  -> email sent successfully
-        False -> email could not be sent
+        True  -> SMTP accepted the message
+        False -> email could not be submitted
     """
-    # Ensure fresh environment variable resolution
-    load_dotenv()
-    if _app_env.exists():
-        load_dotenv(dotenv_path=_app_env)
-    if _backend_env.exists():
-        load_dotenv(dotenv_path=_backend_env)
 
-    host = (
-        os.getenv("EMAIL_HOST") or
-        os.getenv("SMTP_HOST") or
-        os.getenv("MAIL_HOST") or
-        "smtp.gmail.com"
+    config = _get_smtp_config()
+
+    host = config["host"]
+    port = config["port"]
+    username = config["username"]
+    password = config["password"]
+    from_address = config["from_address"]
+
+    clean_recipient = (
+        str(recipient or "")
+        .strip()
+    )
+
+    clean_subject = (
+        str(subject or "")
+        .strip()
+    )
+
+    clean_body = str(
+        body or ""
     ).strip()
 
-    port_str = (
-        os.getenv("EMAIL_PORT") or
-        os.getenv("SMTP_PORT") or
-        os.getenv("MAIL_PORT") or
-        "587"
-    ).strip()
-
-    try:
-        port = int(port_str)
-    except (ValueError, TypeError):
-        port = 587
-
-    username = (
-        os.getenv("EMAIL_USERNAME") or
-        os.getenv("SMTP_USERNAME") or
-        os.getenv("MAIL_USERNAME") or
-        os.getenv("GMAIL_USER") or
-        os.getenv("GMAIL_USERNAME")
-    )
-    if username:
-        username = username.strip()
-
-    password = (
-        os.getenv("EMAIL_PASSWORD") or
-        os.getenv("SMTP_PASSWORD") or
-        os.getenv("MAIL_PASSWORD") or
-        os.getenv("GMAIL_PASS") or
-        os.getenv("GMAIL_PASSWORD")
-    )
-    if password:
-        password = password.strip().replace(" ", "")
-
-    from_addr = (
-        os.getenv("EMAIL_FROM") or
-        os.getenv("SMTP_FROM") or
-        os.getenv("MAIL_FROM") or
-        username
-    )
-    if from_addr:
-        from_addr = from_addr.strip()
-
-    if not username or not password:
+    if not username:
         print(
-            "Email configuration is missing. "
-            "Set EMAIL_USERNAME & EMAIL_PASSWORD (or SMTP_USERNAME & SMTP_PASSWORD) in environment variables."
+            "SMTP ERROR: sender username is missing."
         )
         return False
 
-    clean_recipient = str(recipient).strip() if recipient else ""
-    if not clean_recipient:
-        print("Cannot send email: recipient address is missing or empty.")
+    if not password:
+        print(
+            "SMTP ERROR: sender password is missing."
+        )
         return False
 
-    message = EmailMessage()
-    message["From"] = from_addr
-    message["To"] = clean_recipient
-    message["Subject"] = subject.strip()
-    message.set_content(body)
+    if not from_address:
+        print(
+            "SMTP ERROR: sender address is missing."
+        )
+        return False
 
-    # Primary SMTP connection attempt
+    if not clean_recipient:
+        print(
+            "SMTP ERROR: recipient address is missing."
+        )
+        return False
+
+    if not clean_subject:
+        print(
+            "SMTP ERROR: email subject is missing."
+        )
+        return False
+
+    # --------------------------------------------------------
+    # BUILD MESSAGE
+    # --------------------------------------------------------
+
+    message = EmailMessage()
+
+    message["From"] = formataddr(
+        (
+            "LUXORA",
+            from_address,
+        )
+    )
+
+    message["To"] = clean_recipient
+
+    message["Subject"] = clean_subject
+
+    message["Message-ID"] = make_msgid(
+        domain=(
+            from_address.split("@")[-1]
+            if "@" in from_address
+            else None
+        )
+    )
+
+    message["X-LUXORA"] = (
+        "LUXORA Order Receipt"
+    )
+
+    message.set_content(
+        clean_body
+    )
+
+    # --------------------------------------------------------
+    # PRIMARY ATTEMPT
+    # --------------------------------------------------------
+
     try:
         if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
-                server.login(username, password)
-                server.send_message(message)
-        else:
-            with smtplib.SMTP(host, port, timeout=15) as server:
+            with smtplib.SMTP_SSL(
+                host,
+                465,
+                timeout=30,
+            ) as server:
                 server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(username, password)
-                server.send_message(message)
 
-        print(f"Email sent successfully to {recipient}")
+                server.login(
+                    username,
+                    password,
+                )
+
+                server.send_message(
+                    message,
+                    from_addr=from_address,
+                    to_addrs=[clean_recipient],
+                )
+
+        else:
+            with smtplib.SMTP(
+                host,
+                port,
+                timeout=30,
+            ) as server:
+                server.ehlo()
+
+                server.starttls()
+
+                server.ehlo()
+
+                server.login(
+                    username,
+                    password,
+                )
+
+                server.send_message(
+                    message,
+                    from_addr=from_address,
+                    to_addrs=[clean_recipient],
+                )
+
+        print(
+            "SMTP SUCCESS: "
+            f"receipt accepted for {clean_recipient}"
+        )
+
         return True
 
     except Exception as primary_error:
         print(
-            f"Primary SMTP attempt (host={host}, port={port}) failed for recipient {recipient}: {primary_error}"
+            "SMTP PRIMARY ERROR: "
+            f"{type(primary_error).__name__}: "
+            f"{primary_error}"
         )
 
-        # Fallback attempt with alternate port (SSL 465 vs TLS 587)
-        alt_port = 465 if port != 465 else 587
-        try:
-            print(f"Attempting fallback SMTP send (host={host}, port={alt_port})...")
-            if alt_port == 465:
-                with smtplib.SMTP_SSL(host, alt_port, timeout=15) as server:
-                    server.login(username, password)
-                    server.send_message(message)
-            else:
-                with smtplib.SMTP(host, alt_port, timeout=15) as server:
-                    server.ehlo()
-                    server.starttls()
-                    server.ehlo()
-                    server.login(username, password)
-                    server.send_message(message)
+    # --------------------------------------------------------
+    # FALLBACK
+    # --------------------------------------------------------
 
-            print(f"Fallback email sent successfully to {recipient}")
-            return True
+    fallback_port = (
+        465
+        if port != 465
+        else 587
+    )
 
-        except Exception as fallback_error:
-            print(
-                f"Fallback SMTP attempt (host={host}, port={alt_port}) also failed for recipient {recipient}: {fallback_error}"
-            )
-            return False
+    try:
+        print(
+            "SMTP FALLBACK: "
+            f"trying port {fallback_port}"
+        )
+
+        if fallback_port == 465:
+            with smtplib.SMTP_SSL(
+                host,
+                465,
+                timeout=30,
+            ) as server:
+                server.ehlo()
+
+                server.login(
+                    username,
+                    password,
+                )
+
+                server.send_message(
+                    message,
+                    from_addr=from_address,
+                    to_addrs=[clean_recipient],
+                )
+
+        else:
+            with smtplib.SMTP(
+                host,
+                587,
+                timeout=30,
+            ) as server:
+                server.ehlo()
+
+                server.starttls()
+
+                server.ehlo()
+
+                server.login(
+                    username,
+                    password,
+                )
+
+                server.send_message(
+                    message,
+                    from_addr=from_address,
+                    to_addrs=[clean_recipient],
+                )
+
+        print(
+            "SMTP FALLBACK SUCCESS: "
+            f"receipt accepted for {clean_recipient}"
+        )
+
+        return True
+
+    except Exception as fallback_error:
+        print(
+            "SMTP FALLBACK ERROR: "
+            f"{type(fallback_error).__name__}: "
+            f"{fallback_error}"
+        )
+
+        return False
 
 
 # ============================================================
-# PASSWORD RESET EMAIL
+# PASSWORD RESET
 # ============================================================
 
 def send_password_reset_email(
@@ -169,7 +401,7 @@ def send_password_reset_email(
     otp: str,
 ) -> bool:
     """
-    Send a password-reset verification code.
+    Send password reset verification code.
     """
 
     subject = (
@@ -177,6 +409,11 @@ def send_password_reset_email(
     )
 
     body = f"""
+LUXORA
+========================================
+
+PASSWORD RESET VERIFICATION
+
 Hello,
 
 We received a request to reset your LUXORA account password.
@@ -187,21 +424,22 @@ Your verification code is:
 
 This code will expire soon.
 
-If you did not request a password reset, you can safely ignore this email.
+If you did not request this password reset,
+you can safely ignore this email.
 
 Regards,
 LUXORA
-"""
+""".strip()
 
     return send_email(
         recipient=recipient,
         subject=subject,
-        body=body.strip(),
+        body=body,
     )
 
 
 # ============================================================
-# ORDER CONFIRMATION EMAIL
+# ORDER RECEIPT
 # ============================================================
 
 def send_order_confirmation_email(
@@ -220,83 +458,237 @@ def send_order_confirmation_email(
     order_status: str = "confirmed",
 ) -> bool:
     """
-    Send an order confirmation and receipt email.
-    """
-    from datetime import datetime
+    Send the LUXORA order confirmation/payment receipt.
 
-    email_address = customer_email or recipient
-    formatted_date = order_date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    formatted_status = (order_status or "confirmed").title()
-    formatted_address = delivery_address or "Standard Delivery"
+    IMPORTANT:
+    `recipient` is the customer's email.
+
+    The configured SMTP account is ONLY the sender.
+    """
+
+    clean_recipient = (
+        str(recipient or "")
+        .strip()
+        .lower()
+    )
+
+    clean_customer_email = (
+        str(
+            customer_email
+            or clean_recipient
+        )
+        .strip()
+        .lower()
+    )
+
+    clean_customer_name = (
+        str(
+            customer_name
+            or "LUXORA Customer"
+        )
+        .strip()
+    )
+
+    clean_order_id = (
+        str(order_id or "")
+        .strip()
+    )
+
+    clean_payment_method = (
+        str(
+            payment_method
+            or "Cash on Delivery"
+        )
+        .strip()
+    )
+
+    clean_status = (
+        str(
+            order_status
+            or "confirmed"
+        )
+        .strip()
+        .replace(
+            "_",
+            " ",
+        )
+        .title()
+    )
+
+    clean_address = (
+        str(
+            delivery_address
+            or "Standard Delivery"
+        )
+        .strip()
+    )
+
+    clean_order_date = (
+        str(order_date).strip()
+        if order_date
+        else datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
+
+    # --------------------------------------------------------
+    # PRODUCTS
+    # --------------------------------------------------------
 
     item_lines = []
-    for item in items:
-        unit_price = float(item.get("price", 0))
-        qty = int(item.get("quantity", 1))
-        item_total = unit_price * qty
-        item_name = item.get("name", "Product")
-        item_lines.append(
-            f"  • {item_name}\n"
-            f"    Quantity: {qty}  |  Unit Price: ₹{unit_price:,.2f}  |  Line Total: ₹{item_total:,.2f}"
+
+    for item in items or []:
+        item_name = str(
+            item.get(
+                "name",
+                "Product",
+            )
+        ).strip()
+
+        try:
+            unit_price = float(
+                item.get(
+                    "price",
+                    0,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            unit_price = 0.0
+
+        try:
+            quantity = int(
+                item.get(
+                    "quantity",
+                    1,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            quantity = 1
+
+        quantity = max(
+            1,
+            quantity,
         )
 
-    items_text = "\n\n".join(item_lines) if item_lines else "  No items"
+        line_total = (
+            unit_price * quantity
+        )
 
-    subject = f"LUXORA — Order Confirmation & Receipt #{order_id}"
+        item_lines.append(
+            (
+                f"• {item_name}\n"
+                f"  Quantity: {quantity}\n"
+                f"  Unit Price: ₹{unit_price:,.2f}\n"
+                f"  Line Total: ₹{line_total:,.2f}"
+            )
+        )
+
+    items_text = (
+        "\n\n".join(item_lines)
+        if item_lines
+        else "No items"
+    )
+
+    # --------------------------------------------------------
+    # RECEIPT SUBJECT
+    # --------------------------------------------------------
+
+    subject = (
+        "LUXORA — Order Confirmation & "
+        f"Receipt #{clean_order_id}"
+    )
+
+    # --------------------------------------------------------
+    # RECEIPT BODY
+    # --------------------------------------------------------
 
     body = f"""
 ============================================================
-                        L U X O R A
-                 ORDER CONFIRMATION & RECEIPT
+                         L U X O R A
+             ORDER CONFIRMATION & PAYMENT RECEIPT
 ============================================================
 
-Hello {customer_name},
+Hello {clean_customer_name},
 
 Thank you for shopping with LUXORA.
-Your order has been placed successfully and is now confirmed.
+
+Your order has been successfully confirmed.
 
 ------------------------------------------------------------
-1. ORDER SUMMARY
+ORDER INFORMATION
 ------------------------------------------------------------
+
 Brand:            LUXORA
-Order ID:         {order_id}
-Order Date:       {formatted_date}
-Order Status:     {formatted_status}
-Payment Method:   {payment_method}
+Order ID:         {clean_order_id}
+Order Date:       {clean_order_date}
+Order Status:     {clean_status}
+Payment Method:   {clean_payment_method}
 
 ------------------------------------------------------------
-2. CUSTOMER DETAILS
+CUSTOMER INFORMATION
 ------------------------------------------------------------
-Customer Name:    {customer_name}
-Customer Email:   {email_address}
+
+Customer Name:    {clean_customer_name}
+Customer Email:   {clean_customer_email}
 
 ------------------------------------------------------------
-3. DELIVERY ADDRESS
+DELIVERY ADDRESS
 ------------------------------------------------------------
-{formatted_address}
+
+{clean_address}
 
 ------------------------------------------------------------
-4. ORDERED PRODUCTS
+ORDERED PRODUCTS
 ------------------------------------------------------------
+
 {items_text}
 
 ------------------------------------------------------------
-5. PAYMENT & PRICE DETAILS
+PAYMENT SUMMARY
 ------------------------------------------------------------
-Subtotal:         ₹{subtotal:,.2f}
-Discount:        -₹{discount:,.2f}
-Delivery Charge:  ₹{delivery_charge:,.2f}
+
+Subtotal:         ₹{float(subtotal):,.2f}
+Discount:        -₹{float(discount):,.2f}
+Delivery Charge:  ₹{float(delivery_charge):,.2f}
+
 ------------------------------------------------------------
-FINAL TOTAL:      ₹{total:,.2f}
+FINAL TOTAL:      ₹{float(total):,.2f}
+
+------------------------------------------------------------
+
+Your LUXORA order has been confirmed successfully.
+
+Thank you for choosing LUXORA.
 
 ============================================================
-Thank you for choosing LUXORA.
-If you have any questions, please contact customer support.
+                         LUXORA
+              Elevated essentials for modern living.
 ============================================================
-"""
+""".strip()
+
+    # --------------------------------------------------------
+    # FINAL CUSTOMER VALIDATION
+    # --------------------------------------------------------
+
+    if not clean_recipient:
+        print(
+            "ORDER RECEIPT ERROR: "
+            "customer recipient email is empty."
+        )
+        return False
+
+    # --------------------------------------------------------
+    # SEND
+    # --------------------------------------------------------
 
     return send_email(
-        recipient=recipient,
+        recipient=clean_recipient,
         subject=subject,
-        body=body.strip(),
-    )
+        body=body,
+    )
