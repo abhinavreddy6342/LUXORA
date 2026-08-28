@@ -39,8 +39,6 @@ function ProductDetails() {
 
   /*
    * Find the current product using the URL id.
-   * String conversion makes /product/1 and product id 1
-   * work correctly.
    */
   const product = useMemo(() => {
     return products.find(
@@ -49,28 +47,33 @@ function ProductDetails() {
   }, [id]);
 
   /*
-   * Add the current product to recently viewed.
-   *
-   * IMPORTANT:
-   * Only depend on the URL id and the stable
-   * addRecentlyViewed function.
-   *
-   * Do NOT put `product` in this dependency array.
+   * Product images.
    */
-  useEffect(() => {
-    if (!product) return;
+  const productImages = useMemo(() => {
+    if (!product) {
+      return [];
+    }
 
-    addRecentlyViewed(product.id);
-  }, [id, addRecentlyViewed, product]);
+    return Array.isArray(product.images) &&
+      product.images.length > 0
+      ? product.images
+      : [product.image];
+  }, [product]);
 
   /*
-   * Reset selected image whenever user opens
-   * another product.
+   * Add the current product to recently viewed.
+   *
+   * This effect synchronizes the current product with
+   * the recently-viewed list. It does not synchronously
+   * update local component state.
    */
   useEffect(() => {
-    setSelectedImage(0);
-    setAdded(false);
-  }, [id]);
+    if (!product) {
+      return;
+    }
+
+    addRecentlyViewed(product.id);
+  }, [addRecentlyViewed, product]);
 
   /*
    * Find this product inside the cart.
@@ -83,17 +86,7 @@ function ProductDetails() {
   }, [cart, id]);
 
   /*
-   * Convert recently viewed IDs into actual products.
-   *
-   * This is what makes:
-   *
-   * Recently Viewed
-   *       ↓
-   * ProductCard
-   *       ↓
-   * /product/:id
-   *
-   * work correctly.
+   * Convert recently viewed IDs into products.
    */
   const recentlyViewedProducts = useMemo(() => {
     return recentlyViewed
@@ -104,8 +97,7 @@ function ProductDetails() {
       .map((recentId) =>
         products.find(
           (item) =>
-            String(item.id) ===
-            String(recentId)
+            String(item.id) === String(recentId)
         )
       )
       .filter(Boolean)
@@ -114,12 +106,11 @@ function ProductDetails() {
 
   /*
    * Related products are based on category.
-   *
-   * Every ProductCard already links to:
-   * /product/{product.id}
    */
   const relatedProducts = useMemo(() => {
-    if (!product) return [];
+    if (!product) {
+      return [];
+    }
 
     return products
       .filter(
@@ -156,17 +147,20 @@ function ProductDetails() {
 
   const inWishlist = isInWishlist(product.id);
 
-  const productImages =
-    Array.isArray(product.images) &&
-    product.images.length > 0
-      ? product.images
-      : [product.image];
+  /*
+   * Keep selected image valid if the current product
+   * has fewer images than the previous product.
+   */
+  const safeSelectedImage =
+    selectedImage >= productImages.length
+      ? 0
+      : selectedImage;
 
   const handleAddToCart = () => {
     addToCart(product);
     setAdded(true);
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       setAdded(false);
     }, 1800);
   };
@@ -178,13 +172,11 @@ function ProductDetails() {
 
   return (
     <div className="min-h-screen bg-[#fafaf9] text-[#111111]">
-
       {/* =====================================================
           MAIN PRODUCT
       ===================================================== */}
 
       <main className="mx-auto max-w-[1440px] px-6 py-10 lg:px-10 lg:py-16">
-
         {/* BACK TO SHOP */}
 
         <Link
@@ -196,7 +188,6 @@ function ProductDetails() {
         </Link>
 
         <div className="grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20">
-
           {/* =================================================
               IMAGE SECTION
           ================================================= */}
@@ -215,10 +206,9 @@ function ProductDetails() {
             }}
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-[#f0f0ed]">
-
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={`${product.id}-${selectedImage}`}
+                  key={`${product.id}-${safeSelectedImage}`}
                   initial={{
                     opacity: 0,
                   }}
@@ -235,9 +225,7 @@ function ProductDetails() {
                 >
                   <ProductImage
                     src={
-                      productImages[
-                        selectedImage
-                      ]
+                      productImages[safeSelectedImage]
                     }
                     alt={product.name}
                     className="h-full w-full object-cover"
@@ -253,18 +241,17 @@ function ProductDetails() {
                 </span>
               )}
 
-              {/* PREVIOUS */}
+              {/* PREVIOUS / NEXT */}
 
               {productImages.length > 1 && (
                 <>
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedImage(
-                        (current) =>
-                          current === 0
-                            ? productImages.length - 1
-                            : current - 1
+                      setSelectedImage((current) =>
+                        current === 0
+                          ? productImages.length - 1
+                          : current - 1
                       )
                     }
                     className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 backdrop-blur transition hover:scale-105"
@@ -273,17 +260,13 @@ function ProductDetails() {
                     <ArrowLeft size={15} />
                   </button>
 
-                  {/* NEXT */}
-
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedImage(
-                        (current) =>
-                          current ===
-                          productImages.length - 1
-                            ? 0
-                            : current + 1
+                      setSelectedImage((current) =>
+                        current === productImages.length - 1
+                          ? 0
+                          : current + 1
                       )
                     }
                     className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 backdrop-blur transition hover:scale-105"
@@ -299,28 +282,26 @@ function ProductDetails() {
 
             {productImages.length > 1 && (
               <div className="mt-4 grid grid-cols-4 gap-3">
-                {productImages.map(
-                  (image, index) => (
-                    <button
-                      type="button"
-                      key={`${image}-${index}`}
-                      onClick={() =>
-                        setSelectedImage(index)
-                      }
-                      className={`aspect-square overflow-hidden border transition ${
-                        selectedImage === index
-                          ? "border-black"
-                          : "border-transparent opacity-60 hover:opacity-100"
-                      }`}
-                    >
-                      <ProductImage
-                        src={image}
-                        alt={`${product.name} ${index + 1}`}
-                        className="h-full w-full object-cover"
-                      />
-                    </button>
-                  )
-                )}
+                {productImages.map((image, index) => (
+                  <button
+                    type="button"
+                    key={`${image}-${index}`}
+                    onClick={() =>
+                      setSelectedImage(index)
+                    }
+                    className={`aspect-square overflow-hidden border transition ${
+                      safeSelectedImage === index
+                        ? "border-black"
+                        : "border-transparent opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    <ProductImage
+                      src={image}
+                      alt={`${product.name} ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ))}
               </div>
             )}
           </motion.div>
@@ -344,7 +325,6 @@ function ProductDetails() {
             }}
             className="flex flex-col justify-center"
           >
-
             {/* CATEGORY */}
 
             <p className="mono text-[9px] tracking-[0.22em] text-neutral-500">
@@ -419,9 +399,7 @@ function ProductDetails() {
 
             {cartItem ? (
               <div className="mt-6 border border-black/10 bg-white p-5">
-
                 <div className="flex items-center justify-between">
-
                   <div>
                     <p className="mono text-[8px] tracking-[0.15em] text-neutral-400">
                       IN YOUR CART
@@ -438,7 +416,6 @@ function ProductDetails() {
                   {/* QUANTITY */}
 
                   <div className="flex items-center border border-black/10">
-
                     <button
                       type="button"
                       onClick={() =>
@@ -470,7 +447,6 @@ function ProductDetails() {
                     >
                       <Plus size={14} />
                     </button>
-
                   </div>
                 </div>
 
@@ -493,7 +469,6 @@ function ProductDetails() {
                 className="relative mt-6 flex w-full items-center justify-center gap-3 overflow-hidden bg-black px-7 py-4 text-[10px] font-semibold tracking-[0.15em] text-white"
               >
                 <AnimatePresence mode="wait">
-
                   {added ? (
                     <motion.span
                       key="added"
@@ -529,7 +504,6 @@ function ProductDetails() {
                       ADD TO CART
                     </motion.span>
                   )}
-
                 </AnimatePresence>
               </motion.button>
             )}
@@ -577,7 +551,6 @@ function ProductDetails() {
             {/* SERVICE INFO */}
 
             <div className="mt-8 grid grid-cols-1 border-y border-black/10 sm:grid-cols-3">
-
               <div className="flex gap-3 border-b border-black/10 py-5 sm:border-b-0 sm:border-r sm:pr-5">
                 <Truck
                   size={17}
@@ -628,7 +601,6 @@ function ProductDetails() {
                   </p>
                 </div>
               </div>
-
             </div>
           </motion.div>
         </div>
@@ -646,9 +618,7 @@ function ProductDetails() {
 
       {recentlyViewedProducts.length > 0 && (
         <section className="border-t border-black/10 bg-[#fafaf9] py-20">
-
           <div className="mx-auto max-w-[1440px] px-6 lg:px-10">
-
             <div className="mb-10">
               <p className="mono text-[9px] tracking-[0.22em] text-neutral-400">
                 YOUR HISTORY
@@ -660,16 +630,13 @@ function ProductDetails() {
             </div>
 
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {recentlyViewedProducts.map(
-                (item) => (
-                  <ProductCard
-                    key={`recent-${item.id}`}
-                    product={item}
-                  />
-                )
-              )}
+              {recentlyViewedProducts.map((item) => (
+                <ProductCard
+                  key={`recent-${item.id}`}
+                  product={item}
+                />
+              ))}
             </div>
-
           </div>
         </section>
       )}
@@ -680,11 +647,8 @@ function ProductDetails() {
 
       {relatedProducts.length > 0 && (
         <section className="border-t border-black/[0.06] bg-white">
-
           <div className="mx-auto max-w-[1440px] px-6 py-20 lg:px-10 lg:py-28">
-
             <div className="flex items-end justify-between">
-
               <div>
                 <p className="mono text-[9px] tracking-[0.22em] text-neutral-500">
                   YOU MAY ALSO LIKE
@@ -702,26 +666,19 @@ function ProductDetails() {
                 VIEW ALL
                 <ArrowRight size={13} />
               </Link>
-
             </div>
 
             <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-
-              {relatedProducts.map(
-                (item) => (
-                  <ProductCard
-                    key={`related-${item.id}`}
-                    product={item}
-                  />
-                )
-              )}
-
+              {relatedProducts.map((item) => (
+                <ProductCard
+                  key={`related-${item.id}`}
+                  product={item}
+                />
+              ))}
             </div>
-
           </div>
         </section>
       )}
-
     </div>
   );
 }
