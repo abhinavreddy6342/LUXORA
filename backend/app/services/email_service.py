@@ -101,9 +101,14 @@ def send_email(
         )
         return False
 
+    clean_recipient = str(recipient).strip() if recipient else ""
+    if not clean_recipient:
+        print("Cannot send email: recipient address is missing or empty.")
+        return False
+
     message = EmailMessage()
     message["From"] = from_addr
-    message["To"] = recipient.strip()
+    message["To"] = clean_recipient
     message["Subject"] = subject.strip()
     message.set_content(body)
 
