@@ -14,8 +14,9 @@ import { motion } from "framer-motion";
 import { useShop } from "../context/ShopContext";
 
 const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
-  "http://127.0.0.1:8000";
+  "https://luxora-backend-9fsz.onrender.com";
 
 const ACCESS_TOKEN_KEY = "luxora_access_token";
 

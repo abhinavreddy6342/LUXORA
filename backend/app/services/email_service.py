@@ -12,28 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-EMAIL_HOST = os.getenv(
-    "EMAIL_HOST",
-    "smtp.gmail.com",
-)
-
-EMAIL_PORT = int(
-    os.getenv(
-        "EMAIL_PORT",
-        "587",
-    )
-)
-
-EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")
-
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-
-EMAIL_FROM = os.getenv(
-    "EMAIL_FROM",
-    EMAIL_USERNAME,
-)
-
-
 # ============================================================
 # SEND EMAIL
 # ============================================================
@@ -44,47 +22,86 @@ def send_email(
     body: str,
 ) -> bool:
     """
-    Send a plain-text email using Gmail SMTP.
+    Send a plain-text email using SMTP (Gmail or custom SMTP server).
 
     Returns:
         True  -> email sent successfully
         False -> email could not be sent
     """
+    # Dynamically read environment variables to support both EMAIL_* and SMTP_* names
+    host = (
+        os.getenv("EMAIL_HOST") or
+        os.getenv("SMTP_HOST") or
+        "smtp.gmail.com"
+    )
 
-    if not EMAIL_USERNAME or not EMAIL_PASSWORD:
+    port_str = (
+        os.getenv("EMAIL_PORT") or
+        os.getenv("SMTP_PORT") or
+        "587"
+    )
+    try:
+        port = int(port_str)
+    except (ValueError, TypeError):
+        port = 587
+
+    username = (
+        os.getenv("EMAIL_USERNAME") or
+        os.getenv("SMTP_USERNAME")
+    )
+
+    password = (
+        os.getenv("EMAIL_PASSWORD") or
+        os.getenv("SMTP_PASSWORD")
+    )
+
+    from_addr = (
+        os.getenv("EMAIL_FROM") or
+        os.getenv("SMTP_FROM") or
+        username
+    )
+
+    if not username or not password:
         print(
             "Email configuration is missing. "
-            "Check EMAIL_USERNAME and EMAIL_PASSWORD in .env."
+            "Set EMAIL_USERNAME & EMAIL_PASSWORD (or SMTP_USERNAME & SMTP_PASSWORD) in environment variables."
         )
-
         return False
 
     try:
         message = EmailMessage()
 
-        message["From"] = EMAIL_FROM
+        message["From"] = from_addr
         message["To"] = recipient
         message["Subject"] = subject
 
         message.set_content(body)
 
-        with smtplib.SMTP(
-            EMAIL_HOST,
-            EMAIL_PORT,
-        ) as server:
-
-            server.ehlo()
-
-            server.starttls()
-
-            server.ehlo()
-
-            server.login(
-                EMAIL_USERNAME,
-                EMAIL_PASSWORD,
-            )
-
-            server.send_message(message)
+        if port == 465:
+            with smtplib.SMTP_SSL(
+                host,
+                port,
+                timeout=15,
+            ) as server:
+                server.login(
+                    username,
+                    password,
+                )
+                server.send_message(message)
+        else:
+            with smtplib.SMTP(
+                host,
+                port,
+                timeout=15,
+            ) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(
+                    username,
+                    password,
+                )
+                server.send_message(message)
 
         print(
             f"Email sent successfully to {recipient}"
