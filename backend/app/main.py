@@ -43,6 +43,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "https://luxora-indol.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -62,6 +63,7 @@ app.include_router(reviews.router)
 app.include_router(addresses.router)
 app.include_router(orders.router)
 app.include_router(checkout.router)
+
 
 # ============================================================
 # ROOT
