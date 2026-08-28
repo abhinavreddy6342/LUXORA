@@ -6,7 +6,17 @@ from dotenv import load_dotenv
 
 
 # Load environment variables from .env
+from pathlib import Path
+
 load_dotenv()
+
+_app_env = Path(__file__).resolve().parent / ".env"
+if _app_env.exists():
+    load_dotenv(dotenv_path=_app_env)
+
+_backend_env = Path(__file__).resolve().parent.parent / ".env"
+if _backend_env.exists():
+    load_dotenv(dotenv_path=_backend_env)
 
 
 def send_email(
@@ -21,17 +31,26 @@ def send_email(
         True  -> email sent successfully
         False -> email could not be sent
     """
+    load_dotenv()
+    if _app_env.exists():
+        load_dotenv(dotenv_path=_app_env)
+    if _backend_env.exists():
+        load_dotenv(dotenv_path=_backend_env)
+
     host = (
         os.getenv("EMAIL_HOST") or
         os.getenv("SMTP_HOST") or
+        os.getenv("MAIL_HOST") or
         "smtp.gmail.com"
-    )
+    ).strip()
 
     port_str = (
         os.getenv("EMAIL_PORT") or
         os.getenv("SMTP_PORT") or
+        os.getenv("MAIL_PORT") or
         "587"
-    )
+    ).strip()
+
     try:
         port = int(port_str)
     except (ValueError, TypeError):
@@ -39,19 +58,32 @@ def send_email(
 
     username = (
         os.getenv("EMAIL_USERNAME") or
-        os.getenv("SMTP_USERNAME")
+        os.getenv("SMTP_USERNAME") or
+        os.getenv("MAIL_USERNAME") or
+        os.getenv("GMAIL_USER") or
+        os.getenv("GMAIL_USERNAME")
     )
+    if username:
+        username = username.strip()
 
     password = (
         os.getenv("EMAIL_PASSWORD") or
-        os.getenv("SMTP_PASSWORD")
+        os.getenv("SMTP_PASSWORD") or
+        os.getenv("MAIL_PASSWORD") or
+        os.getenv("GMAIL_PASS") or
+        os.getenv("GMAIL_PASSWORD")
     )
+    if password:
+        password = password.strip()
 
     from_addr = (
         os.getenv("EMAIL_FROM") or
         os.getenv("SMTP_FROM") or
+        os.getenv("MAIL_FROM") or
         username
     )
+    if from_addr:
+        from_addr = from_addr.strip()
 
     if not username or not password:
         print(
@@ -60,53 +92,57 @@ def send_email(
         )
         return False
 
+    message = EmailMessage()
+    message["From"] = from_addr
+    message["To"] = recipient.strip()
+    message["Subject"] = subject.strip()
+    message.set_content(body)
+
+    # Primary SMTP connection attempt
     try:
-        message = EmailMessage()
-
-        message["From"] = from_addr
-        message["To"] = recipient
-        message["Subject"] = subject
-
-        message.set_content(body)
-
         if port == 465:
-            with smtplib.SMTP_SSL(
-                host,
-                port,
-                timeout=15,
-            ) as server:
-                server.login(
-                    username,
-                    password,
-                )
+            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
+                server.login(username, password)
                 server.send_message(message)
         else:
-            with smtplib.SMTP(
-                host,
-                port,
-                timeout=15,
-            ) as server:
+            with smtplib.SMTP(host, port, timeout=15) as server:
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
-                server.login(
-                    username,
-                    password,
-                )
+                server.login(username, password)
                 server.send_message(message)
 
-        print(
-            f"Email sent successfully to {recipient}"
-        )
-
+        print(f"Email sent successfully to {recipient}")
         return True
 
-    except Exception as error:
+    except Exception as primary_error:
         print(
-            f"Failed to send email to {recipient}: {error}"
+            f"Primary SMTP attempt (host={host}, port={port}) failed for recipient {recipient}: {primary_error}"
         )
 
-        return False
+        alt_port = 465 if port != 465 else 587
+        try:
+            print(f"Attempting fallback SMTP send (host={host}, port={alt_port})...")
+            if alt_port == 465:
+                with smtplib.SMTP_SSL(host, alt_port, timeout=15) as server:
+                    server.login(username, password)
+                    server.send_message(message)
+            else:
+                with smtplib.SMTP(host, alt_port, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(username, password)
+                    server.send_message(message)
+
+            print(f"Fallback email sent successfully to {recipient}")
+            return True
+
+        except Exception as fallback_error:
+            print(
+                f"Fallback SMTP attempt (host={host}, port={alt_port}) also failed for recipient {recipient}: {fallback_error}"
+            )
+            return False
 
 
 def send_password_reset_email(
