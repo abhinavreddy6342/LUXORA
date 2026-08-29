@@ -801,48 +801,33 @@ function VendorDashboard() {
      AUTH / INITIAL LOAD
   ============================================================ */
 
-  useEffect(() => {
+    useEffect(() => {
     if (!user) {
-      navigate(
-        "/vendor/login",
-        {
-          replace: true,
-        }
-      );
-
-      return;
+        navigate("/vendor/login", {
+        replace: true,
+        });
+        return;
     }
 
-    const role =
-      String(
-        user.role || ""
-      )
+    const role = String(user.role || "")
         .trim()
         .toLowerCase();
 
-    if (
-      role !==
-      "vendor"
-    ) {
-      navigate(
-        "/login",
-        {
-          replace: true,
-        }
-      );
-
-      return;
+    if (role !== "vendor") {
+        navigate("/login", {
+        replace: true,
+        });
+        return;
     }
 
-    loadDashboard(
-      false
-    );
-  }, [
-    user,
-    navigate,
-    loadDashboard,
-  ]);
+    const timer = window.setTimeout(() => {
+        loadDashboard(false);
+    }, 0);
 
+    return () => {
+        window.clearTimeout(timer);
+    };
+}, [user, navigate, loadDashboard]);
   /* ============================================================
      DERIVED VALUES
   ============================================================ */
