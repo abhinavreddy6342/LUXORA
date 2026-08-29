@@ -28,6 +28,7 @@
 
 ---
 
+
 ## 🚀 About LUXORA
 
 **LUXORA** is a modern full-stack e-commerce platform built to demonstrate how a real-world commerce application can be designed, integrated, secured, and deployed as a complete software product.
