@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -40,12 +41,15 @@ class UserLogin(BaseModel):
 
 
 class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     name: str
     email: EmailStr
     phone: str
+    role: str = "customer"
     created_at: datetime
 
 
@@ -53,6 +57,73 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+# ============================================================
+# VENDOR AUTH
+# ============================================================
+
+class VendorRegister(BaseModel):
+    owner_name: str = Field(
+        ...,
+        min_length=2,
+        max_length=100,
+    )
+
+    business_name: str = Field(
+        ...,
+        min_length=2,
+        max_length=150,
+    )
+
+    email: EmailStr
+
+    phone: str = Field(
+        ...,
+        min_length=10,
+        max_length=15,
+    )
+
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
+
+    business_description: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
+    business_address: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+
+class VendorProfileResponse(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+    id: int
+    user_id: int
+    business_name: str
+    business_email: EmailStr
+    business_phone: str
+    business_description: str | None
+    logo: str | None
+    business_address: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorAuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+    vendor_profile: VendorProfileResponse
 
 
 # ============================================================
@@ -107,11 +178,24 @@ class ProductCreate(BaseModel):
         max_length=255,
     )
 
-    description: str | None = None
+    brand: str | None = Field(
+        default=None,
+        max_length=150,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=10000,
+    )
 
     category: str = Field(
         ...,
         min_length=1,
+        max_length=100,
+    )
+
+    subcategory: str | None = Field(
+        default=None,
         max_length=100,
     )
 
@@ -127,7 +211,12 @@ class ProductCreate(BaseModel):
 
     image: str = Field(
         ...,
+        min_length=1,
         max_length=500,
+    )
+
+    images: list[str] = Field(
+        default_factory=list,
     )
 
     stock: int = Field(
@@ -135,22 +224,76 @@ class ProductCreate(BaseModel):
         ge=0,
     )
 
+    sku: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+
+    specifications: dict[str, Any] = Field(
+        default_factory=dict,
+    )
+
+
+class ProductStockUpdate(BaseModel):
+    quantity: int = Field(
+        ...,
+        ge=1,
+        le=1_000_000,
+    )
+
 
 class ProductResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
+
+    vendor_id: int | None
+
     name: str
+
+    brand: str | None
+
     description: str | None
+
     category: str
+
+    subcategory: str | None
+
     price: float
+
     original_price: float | None
+
     image: str
+
+    images: list[str] = Field(
+        default_factory=list
+    )
+
     stock: int
+
+    sku: str | None
+
+    specifications: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
     rating: float
+
     review_count: int
+
     is_active: bool
+
+    vendor_name: str | None = None
+
     created_at: datetime
+
+    updated_at: datetime
+
+
+class VendorProductResponse(ProductResponse):
+    pass
 
 
 # ============================================================
@@ -174,7 +317,9 @@ class CartItemUpdate(BaseModel):
 
 
 class CartProductResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     name: str
@@ -184,7 +329,9 @@ class CartProductResponse(BaseModel):
 
 
 class CartItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     product_id: int
@@ -207,7 +354,9 @@ class WishlistItemCreate(BaseModel):
 
 
 class WishlistItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     product_id: int
@@ -241,7 +390,9 @@ class ReviewCreate(BaseModel):
 
 
 class ReviewResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     user_id: int
@@ -303,7 +454,9 @@ class AddressCreate(BaseModel):
 
 
 class AddressResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
     user_id: int
@@ -352,33 +505,135 @@ class OrderCreate(BaseModel):
 
 
 class OrderItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
+
     product_id: int | None
+
+    vendor_id: int | None
+
     product_name: str
+
     price: float
+
     quantity: int
 
 
 class OrderResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
     id: int
+
     user_id: int
+
     address_id: int | None
 
     subtotal: float
+
     discount: float
+
     delivery_charge: float
+
     total: float
 
     coupon_code: str | None
+
     payment_method: str
+
     status: str
 
     created_at: datetime
+
     updated_at: datetime
 
     items: list[OrderItemResponse]
+
     email_sent: bool = False
+
+
+# ============================================================
+# VENDOR ORDERS
+# ============================================================
+
+class VendorOrderItemResponse(BaseModel):
+    product_id: int | None
+
+    product_name: str
+
+    price: float
+
+    quantity: int
+
+    total: float
+
+
+class VendorOrderResponse(BaseModel):
+    order_id: int
+
+    customer_name: str
+
+    customer_email: EmailStr
+
+    customer_phone: str
+
+    delivery_name: str | None = None
+
+    delivery_phone: str | None = None
+
+    delivery_address: str | None = None
+
+    delivery_city: str | None = None
+
+    delivery_state: str | None = None
+
+    delivery_postal_code: str | None = None
+
+    delivery_country: str | None = None
+
+    order_status: str
+
+    payment_method: str
+
+    created_at: datetime
+
+    vendor_subtotal: float
+
+    items: list[VendorOrderItemResponse]
+
+
+# ============================================================
+# VENDOR PROFILE UPDATE
+# ============================================================
+
+class VendorProfileUpdate(BaseModel):
+    business_name: str = Field(
+        ...,
+        min_length=2,
+        max_length=150,
+    )
+
+    business_description: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
+    business_phone: str = Field(
+        ...,
+        min_length=10,
+        max_length=15,
+    )
+
+    business_address: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+    logo: str | None = Field(
+        default=None,
+        max_length=500,
+    )

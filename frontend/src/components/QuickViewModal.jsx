@@ -40,6 +40,10 @@ function QuickViewModal() {
 
   const product = quickViewProduct;
   const isFav = isInWishlist(product.id);
+  const isPurchasable =
+    product.is_active !== false &&
+    (!Number.isFinite(Number(product.stock)) ||
+      Number(product.stock) > 0);
 
   return (
     <AnimatePresence>
@@ -123,13 +127,18 @@ function QuickViewModal() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!isPurchasable) {
+                    return;
+                  }
+
                   addToCart(product);
                   closeQuickView();
                 }}
-                className="flex w-full items-center justify-center gap-3 bg-black py-4 text-[10px] font-semibold tracking-[0.15em] text-white hover:bg-neutral-800 transition-colors"
+                disabled={!isPurchasable}
+                className="flex w-full items-center justify-center gap-3 bg-black py-4 text-[10px] font-semibold tracking-[0.15em] text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
               >
                 <ShoppingBag size={14} />
-                ADD TO CART
+                {isPurchasable ? "ADD TO CART" : "OUT OF STOCK"}
               </button>
 
               <button

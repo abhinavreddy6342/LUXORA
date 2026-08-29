@@ -51,6 +51,13 @@ class User(Base):
         nullable=False,
     )
 
+    role: Mapped[str] = mapped_column(
+        String(20),
+        default="customer",
+        nullable=False,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
@@ -94,6 +101,97 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    vendor_profile: Mapped["VendorProfile | None"] = relationship(
+        "VendorProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    vendor_products: Mapped[list["Product"]] = relationship(
+        "Product",
+        back_populates="vendor",
+        foreign_keys="Product.vendor_id",
+    )
+
+
+# ============================================================
+# VENDOR PROFILE
+# ============================================================
+
+class VendorProfile(Base):
+    __tablename__ = "vendor_profiles"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    business_name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    business_email: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    business_phone: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    business_description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    logo: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    business_address: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="active",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="vendor_profile",
+    )
+
 
 # ============================================================
 # ADDRESS
@@ -109,7 +207,10 @@ class Address(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -181,13 +282,35 @@ class Product(Base):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # VENDOR OWNER
+    #
+    # NULL = platform/LUXORA catalog product
+    # INTEGER = vendor-owned product
+    # --------------------------------------------------------
+
+    vendor_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
         index=True,
     )
 
-    description: Mapped[str] = mapped_column(
+    brand: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+        index=True,
+    )
+
+    description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
@@ -195,6 +318,12 @@ class Product(Base):
     category: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
+        index=True,
+    )
+
+    subcategory: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
         index=True,
     )
 
@@ -213,10 +342,26 @@ class Product(Base):
         nullable=False,
     )
 
+    images_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     stock: Mapped[int] = mapped_column(
         Integer,
         default=0,
         nullable=False,
+    )
+
+    sku: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    specifications_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
     rating: Mapped[float] = mapped_column(
@@ -235,12 +380,27 @@ class Product(Base):
         Boolean,
         default=True,
         nullable=False,
+        index=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         nullable=False,
+        index=True,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    vendor: Mapped["User | None"] = relationship(
+        "User",
+        back_populates="vendor_products",
+        foreign_keys=[vendor_id],
     )
 
     cart_items: Mapped[list["CartItem"]] = relationship(
@@ -281,13 +441,19 @@ class CartItem(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"),
+        ForeignKey(
+            "products.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -337,13 +503,19 @@ class WishlistItem(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"),
+        ForeignKey(
+            "products.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -387,13 +559,19 @@ class Review(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"),
+        ForeignKey(
+            "products.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -450,14 +628,21 @@ class Order(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     address_id: Mapped[int | None] = mapped_column(
-        ForeignKey("addresses.id", ondelete="SET NULL"),
+        ForeignKey(
+            "addresses.id",
+            ondelete="SET NULL",
+        ),
         nullable=True,
+        index=True,
     )
 
     subtotal: Mapped[float] = mapped_column(
@@ -497,12 +682,14 @@ class Order(Base):
         String(50),
         default="pending",
         nullable=False,
+        index=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         nullable=False,
+        index=True,
     )
 
     updated_at: Mapped[datetime] = mapped_column(
@@ -538,13 +725,35 @@ class OrderItem(Base):
     )
 
     order_id: Mapped[int] = mapped_column(
-        ForeignKey("orders.id", ondelete="CASCADE"),
+        ForeignKey(
+            "orders.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     product_id: Mapped[int | None] = mapped_column(
-        ForeignKey("products.id", ondelete="SET NULL"),
+        ForeignKey(
+            "products.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    # --------------------------------------------------------
+    # VENDOR SNAPSHOT
+    #
+    # This remains independent from the Product row so
+    # historical vendor attribution survives product changes.
+    # --------------------------------------------------------
+
+    vendor_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+        ),
         nullable=True,
         index=True,
     )

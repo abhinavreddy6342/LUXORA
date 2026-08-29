@@ -326,6 +326,9 @@ def checkout(
         order_item = OrderItem(
             order_id=new_order.id,
             product_id=product.id,
+            # Snapshot the database product owner.  The checkout request
+            # never supplies this value, so it cannot be tampered with.
+            vendor_id=product.vendor_id,
             product_name=product.name,
             price=product.price,
             quantity=quantity,

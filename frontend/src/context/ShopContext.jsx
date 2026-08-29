@@ -308,6 +308,20 @@ export function ShopProvider({ children }) {
         return;
       }
 
+      const stock = Number(product.stock);
+      const hasKnownStock = Number.isFinite(stock);
+
+      if (
+        product.is_active === false ||
+        (hasKnownStock && stock <= 0)
+      ) {
+        addToast(
+          `"${product.name}" is currently unavailable.`,
+          "error"
+        );
+        return;
+      }
+
       const productId = String(product.id);
 
       setCart((currentCart) => {
@@ -317,12 +331,28 @@ export function ShopProvider({ children }) {
         );
 
         if (existingProduct) {
+          const nextQuantity =
+            Number(existingProduct.quantity || 0) + 1;
+
+          if (
+            hasKnownStock &&
+            nextQuantity > stock
+          ) {
+            if (showToastNotice) {
+              addToast(
+                `Only ${stock} of "${product.name}" are available.`,
+                "error"
+              );
+            }
+
+            return currentCart;
+          }
+
           return currentCart.map((item) =>
             String(item.id) === productId
               ? {
                   ...item,
-                  quantity:
-                    Number(item.quantity || 0) + 1,
+                  quantity: nextQuantity,
                 }
               : item
           );
@@ -396,12 +426,21 @@ export function ShopProvider({ children }) {
 
       setCart((currentCart) =>
         currentCart.map((item) =>
-          String(item.id) === id
-            ? {
-                ...item,
-                quantity: newQuantity,
-              }
-            : item
+          {
+            if (String(item.id) !== id) {
+              return item;
+            }
+
+            const stock = Number(item.stock);
+            const maxQuantity = Number.isFinite(stock)
+              ? Math.max(0, stock)
+              : newQuantity;
+
+            return {
+              ...item,
+              quantity: Math.min(newQuantity, maxQuantity),
+            };
+          }
         )
       );
     },
@@ -414,13 +453,22 @@ export function ShopProvider({ children }) {
 
       setCart((currentCart) =>
         currentCart.map((item) =>
-          String(item.id) === id
-            ? {
-                ...item,
-                quantity:
-                  Number(item.quantity || 0) + 1,
-              }
-            : item
+          {
+            if (String(item.id) !== id) {
+              return item;
+            }
+
+            const stock = Number(item.stock);
+            const nextQuantity =
+              Number(item.quantity || 0) + 1;
+
+            return {
+              ...item,
+              quantity: Number.isFinite(stock)
+                ? Math.min(nextQuantity, Math.max(0, stock))
+                : nextQuantity,
+            };
+          }
         )
       );
     },

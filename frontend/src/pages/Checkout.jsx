@@ -278,6 +278,7 @@ function Checkout() {
         ),
         image: item.image || "",
         category: item.category || "",
+        vendor_id: item.vendor_id ?? null,
       })),
 
       subtotal: Math.max(0, Number(cartSubtotal) || 0),

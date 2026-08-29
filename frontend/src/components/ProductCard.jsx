@@ -34,6 +34,11 @@ function ProductCard({ product }) {
   const badgeText =
     product.badge || (product.featured ? "FEATURED" : null);
 
+  const isPurchasable =
+    product.is_active !== false &&
+    (!Number.isFinite(Number(product.stock)) ||
+      Number(product.stock) > 0);
+
   /* =====================================================
      ADD TO CART
   ===================================================== */
@@ -41,6 +46,10 @@ function ProductCard({ product }) {
   const handleAddToCart = (event) => {
     event.preventDefault();
     event.stopPropagation();
+
+    if (!isPurchasable) {
+      return;
+    }
 
     addToCart(product);
 
@@ -188,14 +197,21 @@ function ProductCard({ product }) {
         <motion.button
           type="button"
           onClick={handleAddToCart}
+          disabled={!isPurchasable}
           whileTap={{
             scale: 0.97,
           }}
-          aria-label={`Add ${product.name} to cart`}
+          aria-label={
+            isPurchasable
+              ? `Add ${product.name} to cart`
+              : `${product.name} is out of stock`
+          }
           className={`absolute bottom-4 left-4 right-4 z-20 flex items-center justify-center gap-2 px-5 py-3 text-[10px] font-semibold tracking-[0.15em] text-white transition-all duration-300 ${
             added
               ? "translate-y-0 bg-neutral-800 opacity-100"
-              : "translate-y-2 bg-black opacity-0 group-hover:translate-y-0 group-hover:opacity-100"
+              : isPurchasable
+                ? "translate-y-2 bg-black opacity-0 group-hover:translate-y-0 group-hover:opacity-100"
+                : "translate-y-0 cursor-not-allowed bg-neutral-400 opacity-100"
           }`}
         >
           <AnimatePresence mode="wait">
@@ -231,7 +247,9 @@ function ProductCard({ product }) {
                 className="flex items-center gap-2"
               >
                 <ShoppingBag size={13} />
-                ADD TO CART
+                {isPurchasable
+                  ? "ADD TO CART"
+                  : "OUT OF STOCK"}
               </motion.span>
             )}
           </AnimatePresence>

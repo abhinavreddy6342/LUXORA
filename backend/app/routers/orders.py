@@ -25,20 +25,23 @@ router = APIRouter(
 )
 def create_order(
     order_data: OrderCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        get_current_user
+    ),
     db: Session = Depends(get_db),
 ):
     """
-    Create an order for the authenticated user.
+    Create an order for the authenticated customer.
 
     The backend:
     - validates the delivery address
-    - validates products and stock
-    - calculates the final order amount
+    - validates products
+    - validates stock
+    - calculates pricing
     - creates the order
-    - reduces stock
-    - sends the order receipt to the authenticated
-      user's registered email address
+    - snapshots vendor ownership into each OrderItem
+    - reduces product stock
+    - sends the receipt email
     """
 
     # --------------------------------------------------------
@@ -67,7 +70,9 @@ def create_order(
     if not order_data.items:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order must contain at least one item.",
+            detail=(
+                "Order must contain at least one item."
+            ),
         )
 
     # --------------------------------------------------------
@@ -75,9 +80,22 @@ def create_order(
     # --------------------------------------------------------
 
     subtotal = 0.0
+
     order_items_data = []
+    seen_product_ids: set[int] = set()
 
     for item in order_data.items:
+        if item.product_id in seen_product_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Each product may appear only once in an order. "
+                    "Combine quantities before checkout."
+                ),
+            )
+
+        seen_product_ids.add(item.product_id)
+
         product = (
             db.query(Product)
             .filter(
@@ -87,51 +105,69 @@ def create_order(
             .first()
         )
 
-        # Existing production safety fallback
         if not product:
             try:
-                from ..seed import seed_initial_products
+                from ..seed import (
+                    seed_initial_products
+                )
 
                 seed_initial_products(db)
 
                 product = (
                     db.query(Product)
                     .filter(
-                        Product.id == item.product_id,
+                        Product.id
+                        == item.product_id,
                         Product.is_active.is_(True),
                     )
                     .first()
                 )
+
             except Exception as seed_error:
                 print(
-                    f"Product seeding fallback failed: "
-                    f"{type(seed_error).__name__}: {seed_error}"
+                    "Product seeding fallback failed: "
+                    f"{type(seed_error).__name__}: "
+                    f"{seed_error}"
                 )
 
         if not product:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Product {item.product_id} not found.",
+                detail=(
+                    f"Product {item.product_id} "
+                    "not found."
+                ),
             )
 
-        quantity = int(item.quantity)
+        quantity = int(
+            item.quantity
+        )
 
         if quantity <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Product quantity must be greater than zero.",
-            )
-
-        if product.stock < quantity:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Insufficient stock for '{product.name}'. "
-                    f"Available stock: {product.stock}."
+                    "Product quantity must be "
+                    "greater than zero."
                 ),
             )
 
-        item_total = float(product.price) * quantity
+        if int(product.stock or 0) < quantity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Insufficient stock for "
+                    f"'{product.name}'. "
+                    f"Available stock: "
+                    f"{product.stock}."
+                ),
+            )
+
+        item_total = (
+            float(product.price)
+            * quantity
+        )
+
         subtotal += item_total
 
         order_items_data.append(
@@ -150,7 +186,9 @@ def create_order(
 
     if order_data.coupon_code:
         coupon_code = (
-            order_data.coupon_code.strip().upper()
+            order_data.coupon_code
+            .strip()
+            .upper()
         )
 
         coupons = {
@@ -163,8 +201,10 @@ def create_order(
         )
 
         if discount_percent:
-            discount = subtotal * (
-                discount_percent / 100
+            discount = (
+                subtotal
+                * discount_percent
+                / 100
             )
         else:
             raise HTTPException(
@@ -199,7 +239,7 @@ def create_order(
     )
 
     # --------------------------------------------------------
-    # PAYMENT METHOD
+    # PAYMENT
     # --------------------------------------------------------
 
     payment_method = (
@@ -220,8 +260,10 @@ def create_order(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Invalid payment method. Allowed values: "
-                "Cash on Delivery, UPI, Credit / Debit Card, "
+                "Invalid payment method. "
+                "Allowed values: "
+                "Cash on Delivery, UPI, "
+                "Credit / Debit Card, "
                 "Credit Card, Debit Card."
             ),
         )
@@ -233,15 +275,31 @@ def create_order(
     new_order = Order(
         user_id=current_user.id,
         address_id=address.id,
-        subtotal=round(subtotal, 2),
-        discount=round(discount, 2),
+
+        subtotal=round(
+            subtotal,
+            2,
+        ),
+
+        discount=round(
+            discount,
+            2,
+        ),
+
         delivery_charge=round(
             delivery_charge,
             2,
         ),
-        total=round(total, 2),
+
+        total=round(
+            total,
+            2,
+        ),
+
         coupon_code=coupon_code,
+
         payment_method=payment_method,
+
         status="confirmed",
     )
 
@@ -249,7 +307,13 @@ def create_order(
     db.flush()
 
     # --------------------------------------------------------
-    # CREATE ORDER ITEMS + REDUCE STOCK
+    # CREATE ORDER ITEMS
+    #
+    # IMPORTANT:
+    # vendor_id is copied from Product.vendor_id.
+    #
+    # This is what allows the vendor dashboard to later
+    # determine which order items belong to which vendor.
     # --------------------------------------------------------
 
     email_items = []
@@ -260,39 +324,56 @@ def create_order(
 
         order_item = OrderItem(
             order_id=new_order.id,
+
             product_id=product.id,
+
+            vendor_id=product.vendor_id,
+
             product_name=product.name,
-            price=float(product.price),
+
+            price=float(
+                product.price
+            ),
+
             quantity=quantity,
         )
 
         db.add(order_item)
 
-        product.stock -= quantity
+        product.stock = (
+            int(product.stock or 0)
+            - quantity
+        )
 
         email_items.append(
             {
                 "name": product.name,
-                "price": float(product.price),
+                "price": float(
+                    product.price
+                ),
                 "quantity": quantity,
             }
         )
 
     # --------------------------------------------------------
-    # COMMIT ORDER
+    # COMMIT
     # --------------------------------------------------------
 
     try:
         db.commit()
-        db.refresh(new_order)
+
+        db.refresh(
+            new_order
+        )
 
     except Exception as error:
         db.rollback()
 
         print(
-            f"Failed to create order for user "
+            "Failed to create order for user "
             f"{current_user.id}: "
-            f"{type(error).__name__}: {error}"
+            f"{type(error).__name__}: "
+            f"{error}"
         )
 
         raise HTTPException(
@@ -312,12 +393,6 @@ def create_order(
         .strip()
         .lower()
     )
-
-    if not customer_email:
-        print(
-            f"Order {new_order.id} created, "
-            "but authenticated user has no email address."
-        )
 
     customer_name = (
         current_user.name.strip()
@@ -345,12 +420,15 @@ def create_order(
     order_date = None
 
     if new_order.created_at:
-        order_date = new_order.created_at.strftime(
-            "%Y-%m-%d %H:%M:%S"
+        order_date = (
+            new_order.created_at
+            .strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
         )
 
     # --------------------------------------------------------
-    # SEND RECEIPT EMAIL
+    # SEND RECEIPT
     # --------------------------------------------------------
 
     email_sent = False
@@ -361,61 +439,65 @@ def create_order(
         )
 
         print(
-            f"Customer ID: {current_user.id}"
+            f"Customer ID: "
+            f"{current_user.id}"
         )
 
         print(
-            f"Customer Email: {customer_email}"
+            f"Customer Email: "
+            f"{customer_email}"
         )
 
         print(
-            f"Order ID: LUX-{new_order.id:08d}"
+            f"Order ID: "
+            f"LUX-{new_order.id:08d}"
         )
 
-        email_sent = send_order_confirmation_email(
-            # IMPORTANT:
-            # This is the purchaser's email.
-            recipient=customer_email,
+        email_sent = (
+            send_order_confirmation_email(
+                recipient=customer_email,
 
-            order_id=(
-                f"LUX-{new_order.id:08d}"
-            ),
+                order_id=(
+                    f"LUX-{new_order.id:08d}"
+                ),
 
-            customer_name=customer_name,
+                customer_name=customer_name,
 
-            items=email_items,
+                items=email_items,
 
-            subtotal=float(
-                new_order.subtotal
-            ),
+                subtotal=float(
+                    new_order.subtotal
+                ),
 
-            discount=float(
-                new_order.discount
-            ),
+                discount=float(
+                    new_order.discount
+                ),
 
-            delivery_charge=float(
-                new_order.delivery_charge
-            ),
+                delivery_charge=float(
+                    new_order.delivery_charge
+                ),
 
-            total=float(
-                new_order.total
-            ),
+                total=float(
+                    new_order.total
+                ),
 
-            payment_method=payment_method,
+                payment_method=payment_method,
 
-            order_date=order_date,
+                order_date=order_date,
 
-            customer_email=customer_email,
+                customer_email=customer_email,
 
-            delivery_address=delivery_address,
+                delivery_address=delivery_address,
 
-            order_status=new_order.status,
+                order_status=new_order.status,
+            )
         )
 
     except Exception as error:
         print(
             "LUXORA RECEIPT EMAIL EXCEPTION: "
-            f"{type(error).__name__}: {error}"
+            f"{type(error).__name__}: "
+            f"{error}"
         )
 
         email_sent = False
@@ -438,7 +520,8 @@ def create_order(
         )
 
         print(
-            f"ORDER: LUX-{new_order.id:08d}"
+            f"ORDER: "
+            f"LUX-{new_order.id:08d}"
         )
 
     else:
@@ -447,22 +530,26 @@ def create_order(
         )
 
         print(
-            f"INTENDED RECIPIENT: {customer_email}"
+            f"INTENDED RECIPIENT: "
+            f"{customer_email}"
         )
 
         print(
-            f"ORDER: LUX-{new_order.id:08d}"
+            f"ORDER: "
+            f"LUX-{new_order.id:08d}"
         )
 
     # --------------------------------------------------------
-    # RETURN ORDER
+    # RETURN
     # --------------------------------------------------------
+
+    setattr(new_order, "email_sent", bool(email_sent))
 
     return new_order
 
 
 # ============================================================
-# GET ALL ORDERS
+# GET ALL CUSTOMER ORDERS
 # ============================================================
 
 @router.get(
@@ -470,13 +557,16 @@ def create_order(
     response_model=list[OrderResponse],
 )
 def get_orders(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        get_current_user
+    ),
     db: Session = Depends(get_db),
 ):
     return (
         db.query(Order)
         .filter(
-            Order.user_id == current_user.id
+            Order.user_id
+            == current_user.id
         )
         .order_by(
             Order.created_at.desc()
@@ -486,7 +576,7 @@ def get_orders(
 
 
 # ============================================================
-# GET SINGLE ORDER
+# GET SINGLE CUSTOMER ORDER
 # ============================================================
 
 @router.get(
@@ -495,14 +585,17 @@ def get_orders(
 )
 def get_order(
     order_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        get_current_user
+    ),
     db: Session = Depends(get_db),
 ):
     order = (
         db.query(Order)
         .filter(
             Order.id == order_id,
-            Order.user_id == current_user.id,
+            Order.user_id
+            == current_user.id,
         )
         .first()
     )
@@ -517,7 +610,7 @@ def get_order(
 
 
 # ============================================================
-# UPDATE ORDER STATUS
+# CUSTOMER ORDER STATUS
 # ============================================================
 
 @router.put(
@@ -527,7 +620,9 @@ def get_order(
 def update_order_status(
     order_id: int,
     new_status: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        get_current_user
+    ),
     db: Session = Depends(get_db),
 ):
     allowed_statuses = {
@@ -539,18 +634,20 @@ def update_order_status(
         "cancelled",
     }
 
-    new_status = (
+    clean_status = (
         new_status
         .strip()
         .lower()
     )
 
-    if new_status not in allowed_statuses:
+    if clean_status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Invalid order status. Allowed values: "
-                "pending, confirmed, processing, shipped, "
+                "Invalid order status. "
+                "Allowed values: "
+                "pending, confirmed, "
+                "processing, shipped, "
                 "delivered, cancelled."
             ),
         )
@@ -559,7 +656,8 @@ def update_order_status(
         db.query(Order)
         .filter(
             Order.id == order_id,
-            Order.user_id == current_user.id,
+            Order.user_id
+            == current_user.id,
         )
         .first()
     )
@@ -570,7 +668,7 @@ def update_order_status(
             detail="Order not found.",
         )
 
-    order.status = new_status
+    order.status = clean_status
 
     db.commit()
     db.refresh(order)

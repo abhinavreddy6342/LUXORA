@@ -3,13 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://luxora-backend-9fsz.onrender.com";
+
 function ForgotPassword() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     const trimmedEmail = email.trim().toLowerCase();
@@ -20,37 +26,80 @@ function ForgotPassword() {
     }
 
     if (!trimmedEmail.endsWith("@gmail.com")) {
-      setError("Please use a valid Gmail address ending with @gmail.com.");
+      setError(
+        "Please use a valid Gmail address ending with @gmail.com."
+      );
+      return;
+    }
+
+    if (isSending) {
       return;
     }
 
     setError("");
+    setIsSending(true);
 
-    /*
-      FRONTEND ONLY FOR NOW
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/forgot-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            email: trimmedEmail,
+          }),
+        }
+      );
 
-      Later, when we build the backend:
-      1. Send this email to the backend.
-      2. Backend generates a verification code.
-      3. Code is sent to the user's Gmail.
-      4. User enters the code on the verification page.
-      5. User can then create a new password.
-    */
+      const data = await response.json().catch(() => ({}));
 
-    navigate("/verify-reset-code", {
-      state: {
-        email: trimmedEmail,
-      },
-    });
+      if (!response.ok) {
+        throw new Error(
+          data?.detail ||
+            data?.message ||
+            "Unable to send the verification code. Please try again."
+        );
+      }
+
+      navigate("/verify-reset-code", {
+        state: {
+          email: trimmedEmail,
+        },
+      });
+    } catch (requestError) {
+      console.error(
+        "LUXORA forgot password request failed:",
+        requestError
+      );
+
+      setError(
+        requestError?.message ||
+          "Unable to send the verification code. Please try again."
+      );
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#fafaf9] text-[#111111]">
       {/* HEADER */}
       <motion.header
-        initial={{ y: -40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
+        initial={{
+          y: -40,
+          opacity: 0,
+        }}
+        animate={{
+          y: 0,
+          opacity: 1,
+        }}
+        transition={{
+          duration: 0.6,
+          ease: "easeOut",
+        }}
         className="border-b border-black/[0.06] bg-[#fafaf9]/90 backdrop-blur-xl"
       >
         <nav className="mx-auto flex h-[74px] max-w-[1440px] items-center justify-between px-6 lg:px-10">
@@ -74,14 +123,26 @@ function ForgotPassword() {
       {/* MAIN */}
       <main className="flex min-h-[calc(100vh-74px)] items-center justify-center px-6 py-16">
         <motion.div
-          initial={{ opacity: 0, y: 35 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
+          initial={{
+            opacity: 0,
+            y: 35,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            duration: 0.7,
+            ease: "easeOut",
+          }}
           className="w-full max-w-[460px]"
         >
           {/* ICON */}
           <div className="mb-8 flex h-12 w-12 items-center justify-center border border-black/10 bg-white">
-            <Mail size={19} strokeWidth={1.5} />
+            <Mail
+              size={19}
+              strokeWidth={1.5}
+            />
           </div>
 
           {/* HEADING */}
@@ -99,7 +160,10 @@ function ForgotPassword() {
           </p>
 
           {/* FORM */}
-          <form onSubmit={handleSubmit} className="mt-10">
+          <form
+            onSubmit={handleSubmit}
+            className="mt-10"
+          >
             <label
               htmlFor="email"
               className="mono mb-3 block text-[9px] tracking-[0.15em] text-neutral-500"
@@ -117,7 +181,8 @@ function ForgotPassword() {
               }}
               placeholder="you@gmail.com"
               autoComplete="email"
-              className={`w-full border bg-white px-4 py-4 text-sm outline-none transition-colors placeholder:text-neutral-400 ${
+              disabled={isSending}
+              className={`w-full border bg-white px-4 py-4 text-sm outline-none transition-colors placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:bg-neutral-100 ${
                 error
                   ? "border-red-500 focus:border-red-500"
                   : "border-black/10 focus:border-black"
@@ -126,9 +191,15 @@ function ForgotPassword() {
 
             {error && (
               <motion.p
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-3 text-xs text-red-600"
+                initial={{
+                  opacity: 0,
+                  y: -5,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                className="mt-3 text-xs leading-5 text-red-600"
               >
                 {error}
               </motion.p>
@@ -136,14 +207,22 @@ function ForgotPassword() {
 
             <button
               type="submit"
-              className="group mt-6 flex w-full items-center justify-center gap-4 bg-black px-6 py-4 text-[10px] font-semibold tracking-[0.15em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl"
+              disabled={
+                isSending ||
+                !email.trim()
+              }
+              className="group mt-6 flex w-full items-center justify-center gap-4 bg-black px-6 py-4 text-[10px] font-semibold tracking-[0.15em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
-              SEND VERIFICATION CODE
+              {isSending
+                ? "SENDING CODE..."
+                : "SEND VERIFICATION CODE"}
 
-              <ArrowRight
-                size={14}
-                className="transition-transform duration-300 group-hover:translate-x-1"
-              />
+              {!isSending && (
+                <ArrowRight
+                  size={14}
+                  className="transition-transform duration-300 group-hover:translate-x-1"
+                />
+              )}
             </button>
           </form>
 
