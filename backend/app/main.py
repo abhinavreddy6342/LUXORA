@@ -28,8 +28,7 @@ from .routers import (
 Base.metadata.create_all(bind=engine)
 
 # Bring existing SQLite installations forward before any router
-# reads the marketplace fields. New databases already have these
-# columns from the ORM metadata; the migration is idempotent.
+# reads marketplace fields. The migration is idempotent.
 if engine.dialect.name == "sqlite":
     migrate()
 
@@ -72,22 +71,19 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        # ----------------------------------------------------
-        # LOCAL DEVELOPMENT
-        # ----------------------------------------------------
+        # Local development
         "http://localhost:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
 
-        # ----------------------------------------------------
-        # LUXORA VERCEL FRONTEND
-        # ----------------------------------------------------
-        "https://luxora-psi.vercel.app",
+        # Current LUXORA production frontend
+        "https://luxora-j4w8qdgw0-abhinav-4b23.vercel.app",
 
-        # Older LUXORA deployments
+        # Previous production frontend URLs
         "https://luxora-indol.vercel.app",
         "https://luxora-886n1x88f-abhinav-4b23.vercel.app",
+        "https://luxora-psi.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
