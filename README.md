@@ -2,29 +2,25 @@
 
 # ✨ LUXORA
 
-### AI-Native Full-Stack E-Commerce Platform
+### AI-Native Full-Stack E-Commerce & Agentic Commerce Platform
 
-**Agentic commerce powered by React, FastAPI, SQLAlchemy, Groq, JWT authentication, marketplace vendors, intelligent recommendations, and automated commerce workflows.**
+**A production-style e-commerce platform combining React, FastAPI, SQLAlchemy, JWT authentication, multi-agent AI, vendor management, automated email workflows, and cloud deployment.**
 
 <p>
-  <a href="https://luxora-psi.vercel.app/">
-    🌐 Live Demo
+  <a href="https://luxora-psi.vercel.app/" target="_blank">
+    🌐 <strong>Live Frontend</strong>
   </a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="https://luxora-backend-9xyg.onrender.com/">
-    ⚡ API
+  <a href="https://luxora-backend-9xyg.onrender.com/" target="_blank">
+    ⚡ <strong>Live Backend</strong>
   </a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="https://github.com/abhinavreddy6342/LUXORA">
-    💻 Source Code
+  <a href="https://github.com/abhinavreddy6342/LUXORA" target="_blank">
+    💻 <strong>GitHub Repository</strong>
   </a>
 </p>
 
 </div>
-
----
-
-> **LUXORA is a full-stack, AI-native commerce platform that combines customer shopping, marketplace vendors, inventory, orders, authentication, multi-agent AI, recommendations, conversation memory, and automated communication into one integrated system.**
 
 ---
 
